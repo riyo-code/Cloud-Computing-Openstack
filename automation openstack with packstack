@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+
+#
+# Copyright (C) 2020 Sumariyo <riyo.code@gmail.com>
+# di modify dari routecloud.net/blog/install-openstack-ocata-aio-vm-menggunakan-packstack/
+# perintah-perintah dengan cara manual: https://www.youtube.com/watch?v=Udtr1zJhcrw
+# Distributed under terms of the MIT license.
+# 
+# Openstack-stein using packstack on Centos7
+#
+
+
+#########################################################
+# Cara Menjalankan Script:								#
+# nano packstack-openstack.sh							#
+# Copy + Paste script and save							#
+# chmod a+x packstack-openstack.sh						#
+# ./packstack-openstack.sh								#
+#########################################################
+
+echo -n "Dibutuhkan waktu kurang lebih 1 jam dengan speed internet 1MBPS untuk installasi openstack...."
+
+
+##### Host Resolver #####
+grep openstack /etc/hosts > /dev/null 2>&1 || echo "192.168.40.1 openstack.local" >> /etc/hosts
+
+##### Firewall #####
+systemctl stop firewalld.service
+systemctl disable firewalld.service
+systemctl status firewalld.service
+ 
+##### Disable NetworkManager #####
+systemctl disable NetworkManager.service
+systemctl stop NetworkManager.service
+systemctl status NetworkManager.service
+systemctl enable network.service
+systemctl restart network.service
+systemctl status network.service
+
+##### getenforce #####
+ getenforce
+ setenforce 0
+
+ #### Disable Selinux #####
+ sed -i 's/SELINUX\=enforcing/SELINUX\=permissive/g' /etc/selinux/config
+
+#### Environment ####
+grep openstack /etc/environment > /dev/null 2>&1 || echo "LANG=en_US.utf-8 
+LC_ALL=en_US.utf-8" >> /etc/environment
+
+##### Repositories #####
+echo -n "Update Repo... " && yum -y update > /dev/null 2>&1 && echo "done"
+echo -n "Installing repo openstack stein.... " && yum install -y centos-release-openstack-stein > /dev/null 2>&1 && echo "done"
+echo -n "Update Repo Again... " && yum -y update > /dev/null 2>&1 && echo "done"
+
+##### Paket Packstack #####
+echo -n "Installing Packstack... " && yum install -y openstack-packstack > /dev/null 2>&1 && echo "done"
+ 
+##### NTP #####
+echo -n "Installing chrony for NTP..." && yum -y install chrony > /dev/null 2>&1 && echo "done"
+systemctl enable chronyd.service
+systemctl restart chronyd.service
+systemctl status chronyd.service
+
+ 
+##### Generate Answer File Packstack #####
+echo -n "Generate answer file... " && packstack --gen-answer-file=packstack-openstack.txt --os-neutron-lbaas-install=y > /dev/null 2>&1 && echo "done"
+sed -i 's/CONFIG_SERVICE_WORKERS\=%{::processorcount}/CONFIG_SERVICE_WORKERS\=1/g' packstack-openstack.txt
+sed -i 's/CONFIG_CINDER_INSTALL\=y/CONFIG_CINDER_INSTALL\=n/g' packstack-openstack.txt
+sed -i 's/CONFIG_SWIFT_INSTALL\=y/CONFIG_SWIFT_INSTALL\=n/g' packstack-openstack.txt
+sed -i 's/CONFIG_CEILOMETER_INSTALL\=y/CONFIG_CEILOMETER_INSTALL\=n/g' packstack-openstack.txt
+sed -i 's/CONFIG_AODH_INSTALL\=y/CONFIG_AODH_INSTALL\=n/g' packstack-openstack.txt
+sed -i 's/CONFIG_NEUTRON_OVS_BRIDGE_IFACES\=/CONFIG_NEUTRON_OVS_BRIDGE_IFACES\=br-ex:ens34/g' packstack-openstack.txt
+# sed -i 's/CONFIG_NEUTRON_OVS_BRIDGES_COMPUTE\=/CONFIG_NEUTRON_OVS_BRIDGES_COMPUTE\=br-ex/g' packstack-openstack.txt
+sed -i 's/CONFIG_PROVISION_DEMO\=y/CONFIG_PROVISION_DEMO\=n/g' packstack-openstack.txt
+sed -i 's/CONFIG_KEYSTONE_ADMIN_PW/#CONFIG_KEYSTONE_ADMIN_PW/g' packstack-openstack.txt
+sed -i '338 i CONFIG_KEYSTONE_ADMIN_PW=admin' packstack-openstack.txt
+ 
+
+##### Perintah install packstack ######
+packstack --answer-file=packstack-openstack.txt
+ 
+ 
+#change enable_isolated_metadata dhcp agent with True
+sed -i 's/enable_isolated_metadata\ \=\ False/enable_isolated_metadata\ \=\ True/g' /etc/neutron/dhcp_agent.ini
+systemctl restart neutron-dhcp-agent
+systemctl status neutron-dhcp-agent
+ 
+ 
+#avtivated service virtlogd
+# systemctl status virtlogd
+# systemctl enable virtlogd
+# systemctl restart virtlogd
+# systemctl status virtlogd
+ 
+ 
+#change hypervisor to KVM if value vmx/svm on /proc/cpuinfo is greater 0
+# sed -i 's/virt_type\=qemu/virt_type\=kvm/g' /etc/nova/nova.conf
+# systemctl restart openstack-nova-compute
+# systemctl status openstack-nova-
+
+
+
+ Parameter CONFIG_NEUTRON_L2_AGENT: You have choosen OVN neutron backend. Note that this backend does not support LBaaS,
+  VPNaaS or FWaaS services. Geneve will be used as encapsulation method for tenant networks
